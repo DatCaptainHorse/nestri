@@ -1,0 +1,5 @@
+.idea/
+.xmake/
+build/
+cmake-build-*/
+*.log
