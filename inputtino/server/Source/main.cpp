@@ -38,6 +38,7 @@ auto main(const int argc, char *argv[]) -> int {
 	wss->prepare_devices();
 	wss->create_mouse();
 	wss->create_keyboard();
+	wss->create_controller();
 	wss->run();
 
 	nestri::log("Nestri WebSocket input server exiting..");

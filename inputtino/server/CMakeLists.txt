@@ -39,9 +39,6 @@ set(JWT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(jwt-cpp)
 
 add_subdirectory(External/fake-udev)
-
-find_package(PkgConfig)
-pkg_check_modules(LIBINPUT REQUIRED IMPORTED_TARGET libinput)
 ### EOF DEPS ###
 
 add_executable(inputtino-server)
@@ -54,5 +51,4 @@ target_link_libraries(inputtino-server PRIVATE
   jwt-cpp::jwt-cpp
   nlohmann_json
   fake-udev::lib
-  PkgConfig::LIBINPUT
 )

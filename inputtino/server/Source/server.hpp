@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <thread>
 #include <vector>
 #include <format>
 #include <chrono>
@@ -15,7 +16,6 @@
 #include <hv/json.hpp>
 #include <hv/base64.h>
 #include <hv/WebSocketServer.h>
-#include <libinput.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -29,32 +29,6 @@ using jsonclaim = jwt::basic_claim<jsontraits>;
 // TODO: Cleanup by splitting stuff into files
 
 namespace nestri {
-	// SOURCE: https://github.com/games-on-whales/inputtino //
-	static int open_restricted(const char *path, int flags, void *user_data) {
-		int fd = open(path, flags);
-		return fd < 0 ? -errno : fd;
-	}
-	static void close_restricted(int fd, void *user_data) {
-		close(fd);
-	}
-	const static struct libinput_interface interface = {
-		.open_restricted = open_restricted,
-		.close_restricted = close_restricted,
-	};
-	static std::shared_ptr<libinput> create_libinput_context(const std::vector<std::string> &nodes) {
-		auto li = libinput_path_create_context(&interface, NULL);
-		libinput_log_set_priority(li, LIBINPUT_LOG_PRIORITY_DEBUG);
-		for (const auto &node: nodes)
-			libinput_path_add_device(li, node.c_str());
-
-		return std::shared_ptr<libinput>(li, [](libinput *li) { libinput_unref(li); });
-	}
-	static std::shared_ptr<libinput_event> get_event(std::shared_ptr<libinput> li) {
-		libinput_dispatch(li.get());
-		struct libinput_event *event = libinput_get_event(li.get());
-		return std::shared_ptr<libinput_event>(event, [](libinput_event *event) { libinput_event_destroy(event); });
-	}
-
 	class WSServer {
 		std::string m_secret;
 		std::string m_sessionToken;
@@ -63,7 +37,7 @@ namespace nestri {
 
 		std::unique_ptr<inputtino::Mouse> m_mouse = nullptr;
 		std::unique_ptr<inputtino::Keyboard> m_keyboard = nullptr;
-		std::shared_ptr<libinput> m_keyboard_li = nullptr;
+		std::unique_ptr<inputtino::XboxOneJoypad> m_controller = nullptr;
 
 	public:
 		WSServer(std::string secret, const std::int32_t port)
@@ -113,6 +87,8 @@ namespace nestri {
 			    	nestri::log(std::format("mknod failed: {}", std::strerror(errno)));
 			    else if (system(std::format("chmod 777 {}", path.string()).c_str()) != 0)
 			    	nestri::log(std::format("chmod failed: {}", std::strerror(errno)));
+
+				m_devCounter++;
 			}
         }
 
@@ -138,19 +114,14 @@ namespace nestri {
 			m_mouse = std::make_unique<inputtino::Mouse>(std::move(*input_mouse));
 			for (const auto &node : m_mouse->get_nodes()) {
 				mknod_input_new(node);
-				fakeudev_add(node);
+				//fakeudev_add(node);
 			}
-
-			//nestri::log("libinput step..");
-			//m_mouse_li = create_libinput_context(m_mouse->get_nodes());
 			nestri::log("Successfully created mouse input");
 		}
 
 		void create_keyboard() {
 			nestri::log("Creating keyboard input..");
-			auto input_keyboard = inputtino::Keyboard::create(inputtino::DeviceDefinition{
-				.name = "Wolf (virtual) keyboard",
-			});
+			auto input_keyboard = inputtino::Keyboard::create();
 			if (!input_keyboard) {
 				nestri::log(std::format("Failed to create keyboard input: {}", input_keyboard.getErrorMessage()));
 				return;
@@ -158,15 +129,24 @@ namespace nestri {
 			m_keyboard = std::make_unique<inputtino::Keyboard>(std::move(*input_keyboard));
 			for (const auto &node : m_keyboard->get_nodes()) {
 				mknod_input_new(node);
-				fakeudev_add(node);
+				//fakeudev_add(node);
 			}
-
-			nestri::log("libinput step..");
-			m_keyboard_li = create_libinput_context(m_keyboard->get_nodes());
-			if (libinput_udev_assign_seat(m_keyboard_li.get(), "seat9") != 0)
-				nestri::log("Failed to assign seat");
-
 			nestri::log("Successfully created keyboard input");
+		}
+
+		void create_controller() {
+			nestri::log("Creating controller input..");
+			auto input_controller = inputtino::XboxOneJoypad::create();
+			if (!input_controller) {
+				nestri::log(std::format("Failed to create controller input: {}", input_controller.getErrorMessage()));
+				return;
+			}
+			m_controller = std::make_unique<inputtino::XboxOneJoypad>(std::move(*input_controller));
+			for (const auto &node : input_controller->get_nodes()) {
+				mknod_input_new(node);
+				//fakeudev_add(node);
+			}
+			nestri::log("Successfully created controller input");
 		}
 
 		void on_message(const WebSocketChannelPtr &ch, const std::string &msg) const {
@@ -219,6 +199,8 @@ namespace nestri {
 							const auto key = json["key"].get<std::int32_t>();
 							m_keyboard->press(key);
 						}
+					} else if (input_device == "controller") {
+						nestri::log("Controller input unimplemented");
 					}
 				}
 			} else if (type.contains("jwt_session") && json.contains("secret")) {
