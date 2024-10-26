@@ -8,6 +8,7 @@
 #include <random>
 #include <iostream>
 #include <algorithm>
+#include <filesystem>
 #include <string_view>
 #include <source_location>
 
@@ -19,7 +20,8 @@ namespace nestri {
 
 	// Logs message to stdout, with source location
 	auto log(std::string_view message, const std::source_location &loc = std::source_location::current()) -> void {
-		std::cout << std::format("[{}:{}] {}\n", loc.file_name(), loc.line(), message);
+		const auto file_name = std::filesystem::path(loc.file_name()).filename().string();
+		std::cout << std::format("[{}:{}] {}\n", file_name, loc.line(), message);
 	}
 
 	// Returns string with substring removed

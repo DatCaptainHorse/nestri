@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <vector>
 #include <format>
 #include <chrono>
 #include <memory>
@@ -17,11 +18,15 @@
 #include <libinput.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <fake-udev/fake-udev.hpp>
 
 #include "utils.hpp"
 
 using jsontraits = jwt::traits::nlohmann_json;
 using jsonclaim = jwt::basic_claim<jsontraits>;
+
+// TODO: Cleanup by splitting stuff into files
 
 namespace nestri {
 	// SOURCE: https://github.com/games-on-whales/inputtino //
@@ -39,9 +44,9 @@ namespace nestri {
 	static std::shared_ptr<libinput> create_libinput_context(const std::vector<std::string> &nodes) {
 		auto li = libinput_path_create_context(&interface, NULL);
 		libinput_log_set_priority(li, LIBINPUT_LOG_PRIORITY_DEBUG);
-		for (const auto &node: nodes) {
+		for (const auto &node: nodes)
 			libinput_path_add_device(li, node.c_str());
-		}
+
 		return std::shared_ptr<libinput>(li, [](libinput *li) { libinput_unref(li); });
 	}
 	static std::shared_ptr<libinput_event> get_event(std::shared_ptr<libinput> li) {
@@ -58,6 +63,7 @@ namespace nestri {
 
 		std::unique_ptr<inputtino::Mouse> m_mouse = nullptr;
 		std::unique_ptr<inputtino::Keyboard> m_keyboard = nullptr;
+		std::shared_ptr<libinput> m_keyboard_li = nullptr;
 
 	public:
 		WSServer(std::string secret, const std::int32_t port)
@@ -66,7 +72,7 @@ namespace nestri {
 				nestri::log("WS OPEN");
 			};
 			m_service.onmessage = [this](const WebSocketChannelPtr &channel, const std::string &msg) {
-				nestri::log(std::format("WS MSG: {}", msg));
+				//nestri::log(std::format("WS MSG: {}", msg));
 				on_message(channel, msg);
 			};
 			m_service.onclose = [](const WebSocketChannelPtr &channel) {
@@ -96,21 +102,30 @@ namespace nestri {
 			}
 			nestri::log("Directories created");
 
-			nestri::log("Creating base inputs..");
-			// Mouse 0+1
-			mknod_input_new(0);
-			mknod_input_new(1);
-			// Keyboard 2
-			mknod_input_new(2);
-			nestri::log("Base inputs created");
-
 			nestri::log("Preparations done");
         }
 
-        void mknod_input_new(const std::uint32_t id) {
-			nestri::log(std::format("New input mknod: /dev/input/input{}", id));
-			if (system(std::format("mknod /dev/input/input{} c 13 {}", id, id).c_str()) != 0)
-				nestri::log(std::format("mknod failed: {}", std::strerror(errno)));
+        void mknod_input_new(const std::filesystem::path &path) {
+			const auto id = std::stoi(nestri::split_substr(path.string(), "/dev/input/event")[1]);
+			if (!std::filesystem::exists(path)) {
+				nestri::log(std::format("New input mknod: {}", path.string()));
+			    if (system(std::format("mknod {} c 13 {}", path.string(), id).c_str()) != 0)
+			    	nestri::log(std::format("mknod failed: {}", std::strerror(errno)));
+			    else if (system(std::format("chmod 777 {}", path.string()).c_str()) != 0)
+			    	nestri::log(std::format("chmod failed: {}", std::strerror(errno)));
+			}
+        }
+
+        void fakeudev_add(const std::filesystem::path &path) {
+			const auto id = std::stoi(nestri::split_substr(path.string(), "/dev/input/event")[1]);
+			netlink_connection conn{};
+            if (connect(conn, AF_NETLINK, SOCK_RAW, NETLINK_KOBJECT_UEVENT, 2)) {
+            	const std::string msg = std::format("ACTION=add\0DEVNAME={}\0DEVPATH=/devices/virtual/input/event{}\0SEQNUM=1234\0SUBSYSTEM=input\0", path.string(), id);
+                auto header = make_udev_header(msg, "input", "");
+                if (!send_msgs(conn, {header, msg}))
+                    nestri::log(std::format("Failed to send add msg"));
+            }
+            cleanup(conn);
         }
 
 		void create_mouse() {
@@ -121,18 +136,36 @@ namespace nestri {
 				return;
 			}
 			m_mouse = std::make_unique<inputtino::Mouse>(std::move(*input_mouse));
+			for (const auto &node : m_mouse->get_nodes()) {
+				mknod_input_new(node);
+				fakeudev_add(node);
+			}
+
+			//nestri::log("libinput step..");
+			//m_mouse_li = create_libinput_context(m_mouse->get_nodes());
 			nestri::log("Successfully created mouse input");
-			auto li = create_libinput_context(m_mouse->get_nodes());
 		}
 
 		void create_keyboard() {
 			nestri::log("Creating keyboard input..");
-			auto input_keyboard = inputtino::Keyboard::create();
+			auto input_keyboard = inputtino::Keyboard::create(inputtino::DeviceDefinition{
+				.name = "Wolf (virtual) keyboard",
+			});
 			if (!input_keyboard) {
 				nestri::log(std::format("Failed to create keyboard input: {}", input_keyboard.getErrorMessage()));
 				return;
 			}
 			m_keyboard = std::make_unique<inputtino::Keyboard>(std::move(*input_keyboard));
+			for (const auto &node : m_keyboard->get_nodes()) {
+				mknod_input_new(node);
+				fakeudev_add(node);
+			}
+
+			nestri::log("libinput step..");
+			m_keyboard_li = create_libinput_context(m_keyboard->get_nodes());
+			if (libinput_udev_assign_seat(m_keyboard_li.get(), "seat9") != 0)
+				nestri::log("Failed to assign seat");
+
 			nestri::log("Successfully created keyboard input");
 		}
 
@@ -157,7 +190,7 @@ namespace nestri {
 					const auto &input_device = input_split[0];
 					const auto &input_method = input_split[1];
 
-					nestri::log(std::format("INPUT DEVICE/METHOD: {}/{}", input_device, input_method));
+					//nestri::log(std::format("INPUT DEVICE/METHOD: {}/{}", input_device, input_method));
 
 					if (input_device == "mouse") {
 						if (input_method == "move" && json.contains("x") && json.contains("y")) {
@@ -210,7 +243,7 @@ namespace nestri {
 						.with_audience("nestri.io")
 						.verify(decoded);
 
-				nestri::log("VERIFIED TOKEN");
+				//nestri::log("VERIFIED TOKEN");
 				return true;
 			} catch (const std::exception &e) {
 				nestri::log(std::format("COULD NOT VERIFY TOKEN - REASON: {}", e.what()));
