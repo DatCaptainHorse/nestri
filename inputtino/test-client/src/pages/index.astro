@@ -86,6 +86,8 @@
     x: number;
     y: number;
     absolute: boolean;
+    screenx: number;
+    screeny: number;
   }
 
   interface InputPacket_MouseWheel extends InputPacket_Base {
@@ -142,6 +144,8 @@
             x: ev.x,
             y: ev.y,
             absolute: true,
+            screenx: inputCanvas.clientWidth,
+            screeny: inputCanvas.clientHeight,
           } as InputPacket_MouseMove));
         });
         inputCanvas.addEventListener("wheel", async (ev) => {

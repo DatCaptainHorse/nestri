@@ -20,6 +20,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <fake-udev/fake-udev.hpp>
+#include <scn/scan.h>
 
 #include "utils.hpp"
 
@@ -67,6 +68,7 @@ namespace nestri {
 			nestri::log("Creating directories..");
 			std::filesystem::create_directories("/dev/input");
 			std::filesystem::create_directories("/run/udev");
+			std::filesystem::create_directories("/tmp/nestri/inputs");
 			const auto udev_ctrl_path = std::filesystem::path("/run/udev/control");
 			if (!std::filesystem::exists(udev_ctrl_path)) {
 				if (auto control_file = std::ofstream(udev_ctrl_path)) {
@@ -79,30 +81,89 @@ namespace nestri {
 			nestri::log("Preparations done");
         }
 
+		auto get_sysfs_path(const std::string &event_str) -> std::filesystem::path {
+            std::ifstream file("/proc/bus/input/devices");
+
+            std::filesystem::path sysfs_path;
+            std::string temp_path;
+            std::string line;
+            while (std::getline(file, line)) {
+                auto res = scn::scan<std::string>(line, "S: Sysfs={}");
+                if (res)
+					temp_path = res->value();
+
+                if (!temp_path.empty() && line.contains("Handlers=") && line.contains(event_str)) {
+					sysfs_path = temp_path;
+					temp_path.clear();
+					break;
+				}
+            }
+            return sysfs_path;
+        }
+
         void mknod_input_new(const std::filesystem::path &path) {
 			const auto id = std::stoi(nestri::split_substr(path.string(), "/dev/input/event")[1]);
+			/*if (std::filesystem::exists(path)) {
+				std::error_code ec;
+				if (!std::filesystem::remove(path, ec))
+					nestri::log(std::format("Failed to remove '{}' - reason: {}", path.string(), ec.message()));
+			}*/
+
 			if (!std::filesystem::exists(path)) {
 				nestri::log(std::format("New input mknod: {}", path.string()));
 			    if (system(std::format("mknod {} c 13 {}", path.string(), id).c_str()) != 0)
 			    	nestri::log(std::format("mknod failed: {}", std::strerror(errno)));
 			    else if (system(std::format("chmod 777 {}", path.string()).c_str()) != 0)
 			    	nestri::log(std::format("chmod failed: {}", std::strerror(errno)));
-
-				m_devCounter++;
+				else if (system(std::format("chgrp input {}", path.string()).c_str()) != 0)
+					nestri::log(std::format("chgrp failed: {}", std::strerror(errno)));
 			}
         }
 
-        void fakeudev_add(const std::filesystem::path &path) {
-			const auto id = std::stoi(nestri::split_substr(path.string(), "/dev/input/event")[1]);
+        void fakeudev_add(const std::filesystem::path &path, const std::filesystem::path &devpath) {
 			netlink_connection conn{};
             if (connect(conn, AF_NETLINK, SOCK_RAW, NETLINK_KOBJECT_UEVENT, 2)) {
-            	const std::string msg = std::format("ACTION=add\0DEVNAME={}\0DEVPATH=/devices/virtual/input/event{}\0SEQNUM=1234\0SUBSYSTEM=input\0", path.string(), id);
+            	const std::string msg
+                  = std::format("ACTION=add\0DEVNAME={}\0DEVPATH={}\0SEQNUM=1234\0SUBSYSTEM=input\0",
+                                path.string(), devpath.string());
                 auto header = make_udev_header(msg, "input", "");
                 if (!send_msgs(conn, {header, msg}))
                     nestri::log(std::format("Failed to send add msg"));
             }
             cleanup(conn);
         }
+
+        void symlink_node(const std::filesystem::path &nodepath) {
+			if (std::filesystem::exists(nodepath)) {
+				std::error_code ec;
+				if (!std::filesystem::remove(nodepath, ec))
+					nestri::log(std::format("Failed to remove '{}' - reason: {}", nodepath.string(), ec.message()));
+			}
+
+			const auto splitted = nestri::split_substr(nodepath, "/dev/input/");
+			if (splitted.size() == 2) {
+				std::error_code ec;
+				std::filesystem::create_symlink(nodepath, std::format("/tmp/nestri/inputs/{}", splitted[1]), ec);
+				if (ec)
+					nestri::log(std::format("Failed to symlink '{}' - reason: {}", nodepath.string(), ec.message()));
+			} else
+				nestri::log(std::format("Invalid nodepath for symlinking '{}'", nodepath.string()));
+		}
+
+		void handle_nodes(const std::vector<std::string> &nodes) {
+			for (const auto &node : nodes) {
+				nestri::log(std::format("Node: {}", node));
+				mknod_input_new(node);
+				const auto splitted = nestri::split_substr(node, "/dev/input/");
+				if (splitted.size() == 2) {
+					if (const auto dpath = get_sysfs_path(splitted[1]); !dpath.empty()) {
+						nestri::log(std::format("Node sysfs: {}", dpath.string()));
+						fakeudev_add(node, dpath);
+					}
+				}
+				symlink_node(node);
+			}
+		}
 
 		void create_mouse() {
 			nestri::log("Creating mouse input..");
@@ -112,10 +173,7 @@ namespace nestri {
 				return;
 			}
 			m_mouse = std::make_unique<inputtino::Mouse>(std::move(*input_mouse));
-			for (const auto &node : m_mouse->get_nodes()) {
-				mknod_input_new(node);
-				//fakeudev_add(node);
-			}
+			handle_nodes(m_mouse->get_nodes());
 			nestri::log("Successfully created mouse input");
 		}
 
@@ -127,10 +185,7 @@ namespace nestri {
 				return;
 			}
 			m_keyboard = std::make_unique<inputtino::Keyboard>(std::move(*input_keyboard));
-			for (const auto &node : m_keyboard->get_nodes()) {
-				mknod_input_new(node);
-				//fakeudev_add(node);
-			}
+			handle_nodes(m_keyboard->get_nodes());
 			nestri::log("Successfully created keyboard input");
 		}
 
@@ -142,10 +197,7 @@ namespace nestri {
 				return;
 			}
 			m_controller = std::make_unique<inputtino::XboxOneJoypad>(std::move(*input_controller));
-			for (const auto &node : input_controller->get_nodes()) {
-				mknod_input_new(node);
-				//fakeudev_add(node);
-			}
+			handle_nodes(m_controller->get_nodes());
 			nestri::log("Successfully created controller input");
 		}
 
@@ -173,10 +225,13 @@ namespace nestri {
 					//nestri::log(std::format("INPUT DEVICE/METHOD: {}/{}", input_device, input_method));
 
 					if (input_device == "mouse") {
-						if (input_method == "move" && json.contains("x") && json.contains("y")) {
+						if (input_method == "move" && json.contains("x") && json.contains("y")
+							&& json.contains("screenx") && json.contains("screeny")) {
 							const auto x = json["x"].get<std::int32_t>();
 							const auto y = json["y"].get<std::int32_t>();
-							m_mouse->move_abs(x, y, 1280, 720);
+							const auto scrx = json["screenx"].get<std::int32_t>();
+							const auto scry = json["screeny"].get<std::int32_t>();
+							m_mouse->move_abs(x, y, scrx, scry);
 						} else if (input_method == "wheel" && json.contains("dx") && json.contains("dy")) {
 							const auto dx = json["dx"].get<std::int32_t>();
 							const auto dy = json["dy"].get<std::int32_t>();

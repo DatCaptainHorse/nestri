@@ -23,6 +23,24 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(nlohmann_json)
 
 FetchContent_Declare(
+  jwt-cpp
+  GIT_REPOSITORY https://github.com/Thalhammer/jwt-cpp.git
+  GIT_TAG "v0.7.0")
+set(JWT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(jwt-cpp)
+
+FetchContent_Declare(
+  scnlib
+  GIT_REPOSITORY https://github.com/eliaskosunen/scnlib.git
+  GIT_TAG "v3.0.1")
+set(SCN_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SCN_DOCS OFF CACHE BOOL "" FORCE)
+set(SCN_TESTS OFF CACHE BOOL "" FORCE)
+set(SCN_FUZZING OFF CACHE BOOL "" FORCE)
+set(SCN_BENCHMARKS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(scnlib)
+
+FetchContent_Declare(
   libhv
   GIT_REPOSITORY "https://github.com/ithewei/libhv.git"
   GIT_TAG "v1.3.3")
@@ -30,13 +48,6 @@ set(BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BUILD_FOR_MT ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(libhv)
-
-FetchContent_Declare(
-  jwt-cpp
-  GIT_REPOSITORY https://github.com/Thalhammer/jwt-cpp.git
-  GIT_TAG "v0.7.0")
-set(JWT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(jwt-cpp)
 
 add_subdirectory(External/fake-udev)
 ### EOF DEPS ###
@@ -51,4 +62,5 @@ target_link_libraries(inputtino-server PRIVATE
   jwt-cpp::jwt-cpp
   nlohmann_json
   fake-udev::lib
+  scn::scn
 )
