@@ -332,7 +332,7 @@ async fn main() -> std::io::Result<()> {
         ! {} \
         ! isofmp4mux chunk-duration=1 fragment-duration=1 name=mux \
         ! moqsink url={} broadcast={} \
-        pipewiresrc always-copy=true ! audioconvert ! faac bitrate=196000 ! aacparse ! mux. \
+        alsasrc ! audioconvert ! faac bitrate=196000 ! aacparse ! mux. \
         {debug_sink}
         ",
         args.resolution.0,
