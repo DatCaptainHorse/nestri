@@ -213,7 +213,6 @@ async fn main() -> std::io::Result<()> {
 
     let _ = gst::init();
     let _ = gstmoq::plugin_register_static();
-    let _ = gstwaylanddisplaysrc::plugin_register_static();
 
     println!("Gathering GPU information..");
     let gpus = gpu::get_gpus();
