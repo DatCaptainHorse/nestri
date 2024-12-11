@@ -46,7 +46,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/git/db \
     cargo install cargo-c
 
 # Clone gst plugin source #
-RUN git clone https://github.com/games-on-whales/gst-wayland-display.git
+RUN git clone -b dev-dmabuf https://github.com/games-on-whales/gst-wayland-display.git
 
 # Build gst plugin #
 RUN mkdir plugin
