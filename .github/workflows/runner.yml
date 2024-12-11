@@ -8,20 +8,15 @@ on:
             - "containers/runner.Containerfile"
             - "packages/server/**"
             - ".github/workflows/runner.yml"
-    schedule:
-        - cron: 0 0 * * * # At the end of everyday
     push:
-        branches: [*]
         paths:
             - "containers/runner.Containerfile"
             - ".github/workflows/runner.yml"
             - "packages/server/**"
-    release:
-        types: [created]
 
 env:
     REGISTRY: ghcr.io
-    IMAGE_NAME: nestrilabs/nestri
+    IMAGE_NAME: datcaptainhorse/nestri
     BASE_TAG_PREFIX: runner
 
 # This makes our release ci quit prematurely
