@@ -11,13 +11,11 @@ on:
     schedule:
         - cron: 0 0 * * * # At the end of everyday
     push:
-        branches: [main]
+        branches: [*]
         paths:
             - "containers/runner.Containerfile"
             - ".github/workflows/runner.yml"
             - "packages/server/**"
-        tags:
-            - v*.*.*
     release:
         types: [created]
 
