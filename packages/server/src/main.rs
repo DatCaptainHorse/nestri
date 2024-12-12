@@ -237,7 +237,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     /* Video */
     // Video Source Element
-    let video_source = gst::ElementFactory::make("waylanddisplaysrc").build()?;
+    let video_source = gst::ElementFactory::make_with_name("waylanddisplaysrc", Some("wayland-video-source"))?;
     video_source.set_property("render-node", &gpu.render_path());
 
     // Caps Filter Element (resolution, fps)

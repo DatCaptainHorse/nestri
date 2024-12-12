@@ -148,8 +148,10 @@ impl Signaller {
                     if let Some(data_channel) = data_channel {
                         gst::info!(gst::CAT_DEFAULT, "Data channel created");
                         if let Some(pipeline) = signaller.imp().get_pipeline() {
-                            setup_data_channel(&data_channel, &pipeline);
-                            signaller.imp().set_data_channel(data_channel);
+                            if let Some(event_element) = pipeline.by_name("wayland-video-source") {
+                                setup_data_channel(&data_channel, &event_element);
+                                signaller.imp().set_data_channel(data_channel);
+                            }
                         } else {
                             gst::error!(gst::CAT_DEFAULT, "Wayland display source not set");
                         }
@@ -346,8 +348,8 @@ impl ObjectImpl for Signaller {
     }
 }
 
-fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, pipeline: &gst::Pipeline) {
-    let pipeline = pipeline.clone();
+fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, event_element: &gst::Element) {
+    let event_element = event_element.clone();
     // A shared state to track currently pressed keys
     let pressed_keys = Arc::new(Mutex::new(HashSet::new()));
     let pressed_buttons = Arc::new(Mutex::new(HashSet::new()));
@@ -363,8 +365,8 @@ fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, pipeline: &g
                         if let Some(event) =
                             handle_input_message(input_msg, &pressed_keys, &pressed_buttons)
                         {
-                            // Send the event to pipeline, result bool is ignored
-                            let _ = pipeline.send_event(event);
+                            // Send the event to element, result bool is ignored
+                            let _ = event_element.send_event(event);
                         }
                     } else {
                         eprintln!("Failed to parse InputMessage");
