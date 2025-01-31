@@ -128,7 +128,6 @@ jobs:
                 file:  containers/runner.Containerfile
                 context: ./
                 push: true
-                tags: ${{ steps.meta.outputs.tags }}
-                labels: ${{ steps.meta.outputs.labels }}
+                tags: nestri:runner
                 cache-from: type=gha,mode=max
                 cache-to: type=gha,mode=max
