@@ -79,7 +79,7 @@ jobs:
 
     build-docker-main:
         name: Build image on main
-        if: ${{  github.ref == 'refs/heads/main' }}
+        if: ${{  github.ref == 'refs/heads/main' }} || ${{  github.ref == 'refs/heads/fix/ci-runner-caching-cleanup' }}
         runs-on: self-hosted
         permissions:
             contents: read
