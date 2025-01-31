@@ -34,7 +34,7 @@ env:
 jobs:
     build-docker-pr:
         name: Build image on PR
-        runs-on: ubuntu-latest
+        runs-on: self-hosted
         permissions:
             contents: read
             packages: write
@@ -80,7 +80,7 @@ jobs:
     build-docker-main:
         name: Build image on main
         if: ${{  github.ref == 'refs/heads/main' }}
-        runs-on: ubuntu-latest
+        runs-on: self-hosted
         permissions:
             contents: read
             packages: write
